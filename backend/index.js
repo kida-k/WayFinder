@@ -18,5 +18,5 @@ app.get('/health', (req, res) => {
 app.use('/api', suggestRoute);
 
 app.listen(PORT, () => {
-  console.log(`Wayfinder server running on port ${PORT}`);
+  console.log(`Wayfinder backend running on port ${PORT}`);
 });
