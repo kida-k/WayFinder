@@ -1,4 +1,5 @@
 import express from 'express';
+import 'dotenv/config';
 
 const router = express.Router();
 
@@ -88,6 +89,7 @@ Return ONLY a raw JSON array, no markdown, no code blocks:
 }
 
 router.post('/suggest-route', async (req, res) => {
+  console.log('suggest-route hit', req.body); 
   const { origin, destination, date } = req.body;
 
   if (!origin || !destination || !date) {
