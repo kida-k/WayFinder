@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import suggestRoute from './routes/suggest.js';
 
-dotenv.config();
+dotenv.config({ path: '../.env' });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
