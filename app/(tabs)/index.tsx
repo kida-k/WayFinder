@@ -1,150 +1,338 @@
-import React, { useState } from 'react';
-import { Image } from 'expo-image';
-import { 
-  Platform, StyleSheet, Button, ActivityIndicator, TextInput, 
-  KeyboardAvoidingView, TouchableOpacity, Keyboard, Alert, View 
+import React, { useState, useEffect } from 'react';
+import {
+  Platform, StyleSheet, ActivityIndicator, TextInput,
+  KeyboardAvoidingView, TouchableOpacity, Alert, View,
+  Linking, SafeAreaView, ScrollView, Text
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons'; // For the delete icon
-
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { API_URL } from '@/constants/api';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 
 export default function HomeScreen() {
   const [loading, setLoading] = useState(false);
-  const [stops, setStops] = useState<any[]>([]); // Dynamic stops array
-  const [origin, setOrigin] = useState('Dallas, TX');
-  const [destination, setDestination] = useState('Austin, TX');
+  const [stops, setStops] = useState<any[]>([]);
+  const [origin, setOrigin] = useState('');
+  const [destination, setDestination] = useState('');
   const [customStopQuery, setCustomStopQuery] = useState('');
 
+  const { loadedStops } = useLocalSearchParams();
+
+  useEffect(() => {
+    if (loadedStops) {
+      try {
+        const parsedStops = JSON.parse(loadedStops as string);
+        setStops(parsedStops);
+      } catch (e) {
+        console.error("Failed to parse loaded stops", e);
+      }
+    }
+  }, [loadedStops]);
+
   const handleSuggestRoute = async () => {
-    Keyboard.dismiss();
+    if (!origin || !destination) return Alert.alert("Missing info", "Enter start and end.");
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/api/suggest-route`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          origin,
-          destination,
-          date: new Date().toISOString().split('T')[0],
-        }),
+        body: JSON.stringify({ origin, destination, date: new Date().toISOString().split('T')[0] }),
       });
-
       const data = await response.json();
-      if (response.ok) {
-        setStops(data.stops || []); // Initialize dynamic state
-      } else {
-        alert(data.error || "Server Error");
-      }
-    } catch (error) {
-      alert("Connection failed. Check your local IP.");
+      setStops(data.stops || []);
+    } catch (e) {
+      Alert.alert("Error", "Server unreachable");
     } finally {
       setLoading(false);
     }
   };
 
-  // DELETE: Remove a stop from the local list
-  const deleteStop = (index: number) => {
-    const updatedStops = stops.filter((_, i) => i !== index);
-    setStops(updatedStops);
-  };
-
-  // CUSTOM ADD: Send custom query to MCP bridge
   const addCustomStop = async () => {
-    if (!customStopQuery) return;
+    if (!customStopQuery.trim()) return;
     setLoading(true);
     try {
-      // Logic: Send the query to your chat/mcp endpoint to resolve the location
       const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message: `Add this to my route: ${customStopQuery}`,
-          currentStops: stops 
-        }),
+        body: JSON.stringify({ message: customStopQuery, currentStops: stops }),
       });
-      
       const data = await response.json();
-      if (data.newStop) {
-        setStops([...stops, data.newStop]);
-        setCustomStopQuery('');
-      }
+      if (data.newStop) setStops([...stops, data.newStop]);
+      setCustomStopQuery('');
     } catch (e) {
-      alert("Could not process custom stop.");
+      Alert.alert("Error", "AI search failed");
     } finally {
       setLoading(false);
     }
   };
 
+  const executeSave = async (tripName: string) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/trips`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tripName: tripName || `Trip to ${destination}`,
+          stops
+        }),
+      });
+      if (response.ok) {
+        Alert.alert("Saved!", "Trip saved to your library.");
+      } else {
+        Alert.alert("Error", "Failed to save trip.");
+      }
+    } catch (e) {
+      Alert.alert("Error", "Failed to reach server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveTrip = () => {
+    if (stops.length === 0) return Alert.alert("Error", "No route to save.");
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        "Name Your Trip",
+        "Enter a name for this journey:",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Save", onPress: (name: string | undefined) => executeSave(name || "") }
+        ],
+        "plain-text",
+        `Trip to ${destination}`
+      );
+    } else {
+      executeSave(`Trip to ${destination}`);
+    }
+  };
+
+  const handleNavigate = () => {
+    if (stops.length === 0) return;
+    const waypoints = stops.map(s => `${s.lat},${s.lng}`).join('%7C');
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&waypoints=${waypoints}&travelmode=driving`;
+    Linking.openURL(url);
+  };
+
+  const deleteStop = (index: number) => {
+    setStops(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const typeConfig: Record<string, { icon: string; color: string }> = {
+    restaurant: { icon: '🍔', color: '#FF6B6B' },
+    tourist_attraction: { icon: '🎡', color: '#4ECDC4' },
+    gas_station: { icon: '⛽', color: '#FFE66D' },
+    hotel: { icon: '🏨', color: '#A8E6CF' },
+    default: { icon: '📍', color: '#3B6FE8' },
+  };
+
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-      <ParallaxScrollView
-        headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-        headerImage={<Image source={require('@/assets/images/partial-react-logo.png')} style={styles.reactLogo} />}
-      >
-        <ThemedView style={styles.container}>
-          <ThemedText type="title" style={styles.title}>WayFinder</ThemedText>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-          <ThemedView style={styles.card}>
-            <ThemedText type="defaultSemiBold">Start</ThemedText>
-            <TextInput style={styles.input} value={origin} onChangeText={setOrigin} />
-            <ThemedText type="defaultSemiBold">End</ThemedText>
-            <TextInput style={styles.input} value={destination} onChangeText={setDestination} />
-            
-            {loading ? <ActivityIndicator size="small" color="#1D3D47" /> : (
-              <Button title="Plan My Trip" onPress={handleSuggestRoute} />
-            )}
-          </ThemedView>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.title}>WayFinder</Text>
+            <Text style={styles.subtitle}>Plan your perfect road trip</Text>
+          </View>
 
+          {/* Input Card */}
+          <View style={styles.card}>
+            <View style={styles.inputRow}>
+              <View style={styles.inputDot} />
+              <TextInput
+                style={styles.input}
+                placeholder="Starting point"
+                placeholderTextColor="#666"
+                value={origin}
+                onChangeText={setOrigin}
+              />
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.inputRow}>
+              <View style={[styles.inputDot, { backgroundColor: '#3B6FE8' }]} />
+              <TextInput
+                style={styles.input}
+                placeholder="Destination"
+                placeholderTextColor="#666"
+                value={destination}
+                onChangeText={setDestination}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.planBtn, loading && { opacity: 0.6 }]}
+              onPress={handleSuggestRoute}
+              disabled={loading}>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="map" size={18} color="#fff" />
+                  <Text style={styles.planBtnText}>Plan Trip</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Stops */}
           {stops.length > 0 && (
-            <ThemedView style={styles.results}>
-              <ThemedText type="subtitle">Route Customization</ThemedText>
-              
-              {/* CUSTOM ADD BOX */}
-              <View style={styles.addStopRow}>
-                <TextInput 
-                  style={[styles.input, { flex: 1, marginBottom: 0 }]} 
-                  placeholder="Add e.g. 'Buc-ee's on the way'"
-                  value={customStopQuery}
-                  onChangeText={setCustomStopQuery}
-                />
-                <TouchableOpacity style={styles.addButton} onPress={addCustomStop}>
-                  <Ionicons name="add-circle" size={32} color="#1D3D47" />
+            <View style={styles.stopsSection}>
+              <View style={styles.stopsHeader}>
+                <Text style={styles.stopsTitle}>Your Route</Text>
+                <TouchableOpacity onPress={() => setStops([])}>
+                  <Text style={styles.clearText}>Clear all</Text>
                 </TouchableOpacity>
               </View>
 
-              {stops.map((stop, i) => (
-                <ThemedView key={i} style={styles.stopCard}>
-                  <View style={styles.stopHeader}>
-                    <ThemedText style={styles.stopTitle}>{stop.name}</ThemedText>
-                    <TouchableOpacity onPress={() => deleteStop(i)}>
-                      <Ionicons name="trash-outline" size={20} color="#ff4444" />
+              {/* Add custom stop */}
+              <View style={styles.addRow}>
+                <TextInput
+                  style={styles.addInput}
+                  placeholder="Add a stop... (e.g. Chipotle near Wichita)"
+                  placeholderTextColor="#555"
+                  value={customStopQuery}
+                  onChangeText={setCustomStopQuery}
+                />
+                <TouchableOpacity style={styles.addBtn} onPress={addCustomStop}>
+                  {loading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Ionicons name="add" size={22} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* Stop cards */}
+              {stops.map((stop, i) => {
+                const config = typeConfig[stop.type] || typeConfig.default;
+                return (
+                  <View key={i} style={styles.stopCard}>
+                    <View style={[styles.stopIcon, { backgroundColor: config.color + '22' }]}>
+                      <Text style={styles.stopEmoji}>{config.icon}</Text>
+                    </View>
+                    <View style={styles.stopInfo}>
+                      <Text style={styles.stopName}>{stop.name}</Text>
+                      <Text style={styles.stopDesc}>{stop.description || stop.address}</Text>
+                      {stop.rating && (
+                        <Text style={styles.stopRating}>⭐ {stop.rating}</Text>
+                      )}
+                    </View>
+                    <TouchableOpacity onPress={() => deleteStop(i)} style={styles.deleteBtn}>
+                      <Ionicons name="close" size={18} color="#666" />
                     </TouchableOpacity>
                   </View>
-                  <ThemedText style={styles.desc}>{stop.description}</ThemedText>
-                </ThemedView>
-              ))}
-            </ThemedView>
+                );
+              })}
+
+              {/* Action buttons */}
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={styles.saveBtn} onPress={handleSaveTrip}>
+                  <Ionicons name="bookmark-outline" size={18} color="#fff" />
+                  <Text style={styles.actionBtnText}>Save</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.goBtn} onPress={handleNavigate}>
+                  <Ionicons name="navigate" size={18} color="#fff" />
+                  <Text style={styles.actionBtnText}>Start Trip</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           )}
-        </ThemedView>
-      </ParallaxScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 10 },
-  title: { marginBottom: 15 },
-  card: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 15, borderRadius: 15, gap: 8 },
-  input: { height: 45, backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: '#eee', marginBottom: 5, color: '#000' },
-  results: { marginTop: 20 },
-  addStopRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 15 },
-  addButton: { padding: 5 },
-  stopCard: { backgroundColor: '#e3f2fd', padding: 15, borderRadius: 12, marginVertical: 6 },
-  stopHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  stopTitle: { fontSize: 17, fontWeight: '700', color: '#002D62' },
-  desc: { fontSize: 14, color: '#333', marginTop: 4 },
-  reactLogo: { height: 178, width: 290, position: 'absolute', bottom: 0, left: 0 },
+  container: { flex: 1, backgroundColor: '#0F0F0F' },
+  scroll: { padding: 20, paddingBottom: 40 },
+  header: { marginTop: 16, marginBottom: 24 },
+  title: { fontSize: 34, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
+  subtitle: { fontSize: 15, color: '#666', marginTop: 4 },
+  card: {
+    backgroundColor: '#1C1C1E',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 24,
+  },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
+  inputDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#444' },
+  input: { flex: 1, fontSize: 16, color: '#fff', paddingVertical: 10 },
+  divider: { height: 1, backgroundColor: '#2C2C2E', marginLeft: 22, marginVertical: 4 },
+  planBtn: {
+    backgroundColor: '#3B6FE8',
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  planBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  stopsSection: { gap: 10 },
+  stopsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  stopsTitle: { fontSize: 20, fontWeight: '700', color: '#fff' },
+  clearText: { color: '#FF3B30', fontSize: 14, fontWeight: '500' },
+  addRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  addInput: {
+    flex: 1,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#fff',
+    fontSize: 14,
+  },
+  addBtn: {
+    backgroundColor: '#3B6FE8',
+    borderRadius: 12,
+    width: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopCard: {
+    backgroundColor: '#1C1C1E',
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  stopIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopEmoji: { fontSize: 20 },
+  stopInfo: { flex: 1 },
+  stopName: { fontSize: 15, fontWeight: '600', color: '#fff', marginBottom: 2 },
+  stopDesc: { fontSize: 12, color: '#888' },
+  stopRating: { fontSize: 12, color: '#FFE66D', marginTop: 2 },
+  deleteBtn: { padding: 4 },
+  actionRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  saveBtn: {
+    flex: 1,
+    backgroundColor: '#2C2C2E',
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  goBtn: {
+    flex: 2,
+    backgroundColor: '#3B6FE8',
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  actionBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

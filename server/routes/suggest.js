@@ -23,12 +23,12 @@ async function searchPlacesAlongRoute(lat, lng, type) {
   const place = data.results[0];
   return {
     id: place.place_id,
-    name: place.name,
+    name: place.name || "Interesting Spot",
     lat: place.geometry.location.lat,
     lng: place.geometry.location.lng,
-    address: place.vicinity,
+    address: place.vicinity || "Along the route",
     rating: place.rating || null,
-    type
+    type: type
   };
 }
 
@@ -42,93 +42,94 @@ async function getRouteWaypoints(origin, destination) {
   const totalDistance = leg.distance.text;
   const totalDuration = leg.duration.text;
 
-  // sample points along the route
   const steps = leg.steps;
   const interval = Math.floor(steps.length / 4);
   const sampledPoints = [1, 2, 3].map(i => {
-    const step = steps[Math.min(i * interval, steps.length - 1)];
-    return step.end_location;
+    const idx = Math.min(i * interval, steps.length - 1);
+    return steps[idx].end_location;
   });
 
   return { sampledPoints, totalDistance, totalDuration };
 }
 
 async function addDescriptions(stops, origin, destination) {
-  const stopList = stops.map(s => `${s.name} (${s.type})`).join(', ');
+  if (!stops || stops.length === 0) return [];
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'openrouter/free',
-      messages: [{
-        role: 'user',
-        content: `You are a travel writer. For a road trip from ${origin} to ${destination}, 
-write a short description (max 15 words) for each of these real stops: ${stopList}.
-Return ONLY a raw JSON array, no markdown, no code blocks:
-[{ "name": "exact stop name", "description": "short description" }]`
-      }]
-    })
-  });
+  const stopList = stops.map(s => s.name).join(', ');
 
-  const data = await response.json();
-  const text = data.choices[0].message.content;
-  const cleaned = text.replace(/```json|```/g, '').trim();
-  const descriptions = JSON.parse(cleaned);
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'openrouter/free',
+        messages: [{
+          role: 'user',
+          content: `You are a travel writer. For a road trip from ${origin} to ${destination}, write a short description (max 15 words) for each of these real stops: ${stopList}. Return ONLY a raw JSON array: [{ "name": "exact stop name", "description": "short description" }]`
+        }]
+      })
+    });
 
-  return stops.map(stop => {
-    const match = descriptions.find(d => d.name === stop.name);
-    return {
+    const data = await response.json();
+    const text = data.choices[0]?.message?.content || "";
+    const cleaned = text.replace(/```json|```/g, '').trim();
+    const descriptions = JSON.parse(cleaned);
+
+    return stops.map(stop => {
+      const match = Array.isArray(descriptions) ? descriptions.find(d => d && d.name === stop.name) : null;
+      return {
+        ...stop,
+        description: match ? match.description : `A great stop near ${stop.name}.`
+      };
+    });
+
+  } catch (error) {
+    return stops.map(stop => ({
       ...stop,
-      description: match ? match.description : `A great stop in ${stop.name}`
-    };
-  });
+      description: "A convenient stop located along your route."
+    }));
+  }
 }
 
 router.post('/suggest-route', async (req, res) => {
-  console.log('suggest-route hit', req.body); 
   const { origin, destination, date } = req.body;
 
-  if (!origin || !destination || !date) {
-    return res.status(400).json({ error: 'origin, destination and date are required' });
+  if (!origin || !destination) {
+    return res.status(400).json({ error: 'Origin and destination are required' });
   }
 
   try {
-    // 1. geocode origin and destination
     const [originData, destinationData] = await Promise.all([
       geocode(origin),
       geocode(destination)
     ]);
 
-    // 2. get real route waypoints
-    const { sampledPoints, totalDistance, totalDuration } = await getRouteWaypoints(origin, destination);
-
-    // 3. search real places at each waypoint
+    const routeInfo = await getRouteWaypoints(origin, destination);
     const types = ['restaurant', 'tourist_attraction', 'gas_station'];
-    const stopPromises = sampledPoints.map((point, i) =>
+    
+    const stopPromises = routeInfo.sampledPoints.map((point, i) =>
       searchPlacesAlongRoute(point.lat, point.lng, types[i % types.length])
     );
+    
     const rawStops = await Promise.all(stopPromises);
-    const validStops = rawStops.filter(Boolean);
+    const validStops = rawStops.filter(s => s !== null);
 
-    // 4. add LLM descriptions to real places
-    const stopsWithDescriptions = await addDescriptions(validStops, origin, destination);
+    const finalStops = await addDescriptions(validStops, origin, destination);
 
     res.json({
       origin: originData,
       destination: destinationData,
-      stops: stopsWithDescriptions,
-      totalDistance,
-      estimatedDuration: totalDuration,
-      date
+      stops: finalStops,
+      totalDistance: routeInfo.totalDistance,
+      estimatedDuration: routeInfo.totalDuration,
+      date: date
     });
 
   } catch (err) {
-    console.error('Route error:', err);
-    res.status(500).json({ error: err.message || 'Failed to generate route' });
+    res.status(500).json({ error: err.message });
   }
 });
 

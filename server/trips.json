@@ -1,0 +1,80 @@
+[
+  {
+    "id": "1778088298694",
+    "tripName": "Trip to Austin, TX",
+    "stops": [
+      {
+        "id": "ChIJzZ8OFSOZToYR8E34w1-AprA",
+        "name": "Fairmont Dallas",
+        "lat": 32.7857161,
+        "lng": -96.8017967,
+        "address": "1717 North Akard Street, Dallas",
+        "rating": 4.4,
+        "type": "restaurant",
+        "description": "A convenient stop located along your route."
+      },
+      {
+        "id": "ChIJlVSchtpqRYYRcJnMtQwFjrQ",
+        "name": "Lions Park",
+        "lat": 31.0639893,
+        "lng": -97.40266760000002,
+        "address": "4320 Lions Park Drive, Temple",
+        "rating": 4.6,
+        "type": "tourist_attraction",
+        "description": "A convenient stop located along your route."
+      },
+      {
+        "id": "ChIJ31qbT662RIYRvwo3y-z1Rk8",
+        "name": "Exxon",
+        "lat": 30.2181875,
+        "lng": -97.68908719999999,
+        "address": "7715 East Ben White Boulevard, Austin",
+        "rating": 4,
+        "type": "gas_station",
+        "description": "A convenient stop located along your route."
+      }
+    ],
+    "createdAt": "2026-05-06T17:24:58.694Z"
+  },
+  {
+    "id": "1778105088102",
+    "tripName": "Trip to Denver, Colorado",
+    "stops": [
+      {
+        "id": "ChIJO78m0cF_ToYRCuXw6UB4SwM",
+        "name": "Texas Roadhouse",
+        "lat": 32.85401459999999,
+        "lng": -97.1105924,
+        "address": "3000 Crystal Springs Street, Bedford",
+        "rating": 4.6,
+        "type": "restaurant",
+        "description": "Hearty steakhouse serving hand-cut steaks, ribs, and fresh-baked rolls."
+      },
+      {
+        "id": "ChIJJYVcSYggU4YR7I5berDH0oc",
+        "name": "Castaway Cove Waterpark",
+        "lat": 33.8875245,
+        "lng": -98.4724078,
+        "address": "1000 Central East Freeway, Wichita Falls",
+        "rating": 4.1,
+        "type": "tourist_attraction",
+        "description": "Family-friendly waterpark with slides, lazy rivers, and splash zones for all ages."
+      },
+      {
+        "name": "Golden Gate Canyon State Park",
+        "description": "Found near Denver, CO, USA. Rated 4.8 stars.",
+        "lat": 39.8414296,
+        "lng": -105.4197987,
+        "address": "92 Crawford Gulch Rd, Golden"
+      },
+      {
+        "name": "Daniels & Fisher",
+        "description": "Found near Denver, CO, USA. Rated 4.6 stars.",
+        "lat": 39.7481084,
+        "lng": -104.9957419,
+        "address": "1601 Arapahoe St, Denver"
+      }
+    ],
+    "createdAt": "2026-05-06T22:04:48.102Z"
+  }
+]
